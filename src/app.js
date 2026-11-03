@@ -78,22 +78,28 @@ function eclipseBlock(l) {
   const contact = l.aspects.some(a => a.aspect === 'conjunction');
   return `<div class="house"><p class="small">${esc(e[l.phase].what)}</p>
     <p class="small muted">${esc(e.node[l.node])}</p>
-    ${contact ? `<p class="small" style="color:var(--gold)">${esc(e.node.contact)}</p>` : ''}
+    ${contact ? `<p class="small hot">${esc(e.node.contact)}</p>` : ''}
     <p class="small muted">${esc(e[l.phase].how)}</p></div>`;
+}
+
+// The Moon as it looks: k = lit fraction 0–1, lit on the right while waxing.
+function disc(k, waxing) {
+  const r = 20, rx = (r * Math.abs(1 - 2 * k)).toFixed(2), s = waxing ? 1 : 0;
+  const lit = k > .01 ? `<path class="disc-lit" d="M0,-${r}A${r},${r} 0 0 ${s} 0,${r}A${rx},${r} 0 0 ${k > .5 ? s : 1 - s} 0,-${r}Z"/>` : '';
+  return `<svg class="disc" viewBox="-21 -21 42 42" aria-hidden="true"><circle r="${r}" class="disc-dark"/>${lit}</svg>`;
 }
 
 function todayCard(chart) {
   const t = todayMoon(new Date(), chart, settings().system);
   const v = t.void;
   const voidLine = v.active
-    ? `<p class="small" style="color:var(--gold)">Void of course until ${esc(fmtWhen(v.end))}, then into ${v.nextSign}.</p>`
+    ? `<p class="small hot">Void of course until ${esc(fmtWhen(v.end))}, then into ${v.nextSign}.</p>`
     : `<p class="small muted">Next void of course: ${esc(fmtWhen(v.start))} to ${esc(fmtWhen(v.end))}, then into ${v.nextSign}.</p>`;
   return `
     <section class="card today">
+      ${disc(t.lit / 100, /Waxing|First/.test(t.phase))}
       <div class="eyebrow">Today · ${t.phase} · ${t.lit}% lit</div>
-      <div class="row" style="align-items:baseline">
-        <div class="degree" style="font-size:32px">Moon ${fmtDeg(t.lon)}</div>
-      </div>
+      <div class="degree" style="font-size:34px">Moon ${fmtDeg(t.lon)}</div>
       <p class="muted" style="margin:0 0 8px">In your ${ordinal(t.house)} house · ${esc(content.signs[t.sign])}</p>
       ${voidLine}
       ${t.aspects.length ? aspectList(t.aspects) : ''}
@@ -104,19 +110,21 @@ function todayCard(chart) {
 function home(chart) {
   const lunations = nextLunations(new Date(), chart, settings().system);
   view.innerHTML = `
+    <header class="mast"><span class="mark">Moon Magic</span><span class="eyebrow">${esc(new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }))}</span></header>
     ${todayCard(chart)}
     <div class="eyebrow">${chart.name ? esc(chart.name) + ' · ' : ''}Your next two moons</div>
     ${systemNote(chart, lunations[0])}
     ${lunations.map(l => `
       <a class="card ${l.phase}" href="#/practice/${l.phase}">
+        ${disc(l.phase === 'new' ? 0 : 1, true)}
         <div class="eyebrow accent">${l.phase === 'new' ? 'New Moon · declaration' : 'Full Moon · illumination'}</div>
         <div class="degree">${fmtDeg(l.lon)}</div>
         <div class="when">${esc(fmtFull(l.date))}</div>
         ${status(l)}
         ${windowLine(l)}
         <div class="tags">
-          ${l.eclipse ? `<span class="tag gold">${esc(l.eclipse)}</span>` : ''}
-          ${l.moonSign ? '<span class="tag gold">Your Moon sign · you are the emotional main character</span>' : ''}
+          ${l.eclipse ? `<span class="tag hot">${esc(l.eclipse)}</span>` : ''}
+          ${l.moonSign ? '<span class="tag hot">Your Moon sign · you are the emotional main character</span>' : ''}
           ${l.lateDegree ? '<span class="tag">Late degree</span>' : ''}
         </div>
         <div class="house">
@@ -214,7 +222,7 @@ function library(chart, tab) {
     for (const l of dated) {
       if (month(l.date) !== current) { current = month(l.date); html += `<li class="month">${esc(current)}</li>`; }
       html += `<li class="${l.phase}"><a href="#/practice/${l.phase}/${l.date}">
-        <span><b>${l.phase === 'new' ? 'New' : 'Full'} Moon in ${l.sign}</b>${l.eclipse ? ' <span class="tag gold">eclipse</span>' : ''}<br>
+        <span><b>${l.phase === 'new' ? 'New' : 'Full'} Moon in ${l.sign}</b>${l.eclipse ? ' <span class="tag hot">eclipse</span>' : ''}<br>
         <span class="small muted">${esc(fmtShort(l.date))} · ${esc(countdown(l).text)}</span></span>
         <span class="accent">${ordinal(l.house)}</span></a></li>`;
     }
