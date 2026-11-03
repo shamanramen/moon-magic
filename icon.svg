@@ -1,6 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#0c0b12"/>
-  <circle cx="256" cy="256" r="150" fill="none" stroke="#2a2836" stroke-width="10"/>
-  <path d="M300 116a150 150 0 1 0 0 280 120 120 0 1 1 0-280z" fill="#e6e2f0"/>
-  <circle cx="356" cy="160" r="14" fill="#2ee6d6"/>
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#f3d38b" stop-opacity=".22"/>
+      <stop offset="1" stop-color="#f3d38b" stop-opacity="0"/>
+    </radialGradient>
+    <mask id="lit"><circle cx="256" cy="256" r="140" fill="#fff"/><circle cx="318" cy="238" r="122" fill="#000"/></mask>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#0a0c13"/>
+  <circle cx="256" cy="256" r="230" fill="url(#glow)"/>
+  <circle cx="256" cy="256" r="140" fill="#161a26" stroke="#efe9da" stroke-opacity=".22" stroke-width="3"/>
+  <circle cx="256" cy="256" r="140" fill="#f3d38b" mask="url(#lit)"/>
+  <circle cx="380" cy="132" r="7" fill="#a9c4ff"/>
+  <circle cx="140" cy="384" r="4" fill="#efe9da" opacity=".6"/>
 </svg>
