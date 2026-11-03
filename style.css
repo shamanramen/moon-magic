@@ -114,7 +114,7 @@ nav a.on { color: var(--bone); box-shadow: inset 0 2px 0 var(--signal); }
 @media print {
   :root { --ink: #fff; --elev: #fff; --bone: #111; --mist: #444; --fog: #666; --line: #ccc; }
   body { padding: 0; }
-  nav, .actions, .noprint { display: none !important; }
+  nav, .actions, .noprint, .status { display: none !important; }
   .item, .card { break-inside: avoid; border-color: #ccc; }
   textarea { border: 0; border-bottom: 1px solid #ccc; border-radius: 0; padding: 4px 0; }
 }

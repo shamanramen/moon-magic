@@ -224,11 +224,12 @@ function library(chart, tab) {
       <ul class="list">${html}</ul>`;
     return;
   }
+  const preview = p => { const t = (p.answers.journal || p.answers.line || '').trim(); return t ? ` · ${esc(t.slice(0, 60))}${t.length > 60 ? '…' : ''}` : ''; };
   const saved = Object.values(pages()).filter(p => Object.values(p.answers).some(v => v?.trim()))
     .sort((a, b) => b.date.localeCompare(a.date));
   view.innerHTML = `<h1>Library</h1>${tabs}
     ${saved.length ? `<ul class="list">${saved.map(p => `<li class="${p.phase}"><a href="#/practice/${p.phase}/${p.date}">
-      <span><b>${p.phase === 'new' ? 'New' : 'Full'} Moon in ${p.sign}</b><br><span class="small muted">${esc(new Date(p.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }))} ·${esc((p.answers.journal || p.answers.line || '').slice(0, 60))}</span></span>
+      <span><b>${p.phase === 'new' ? 'New' : 'Full'} Moon in ${p.sign}</b><br><span class="small muted">${esc(new Date(p.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }))}${preview(p)}</span></span>
       <span class="accent">${ordinal(p.house)}</span></a></li>`).join('')}</ul>`
     : '<p class="muted">Nothing written yet. Pages you write in show up here, newest first.</p>'}`;
 }
@@ -236,7 +237,7 @@ function library(chart, tab) {
 /* ---------- Moon baseline ---------- */
 function moonPage(chart, first) {
   const moon = chart.planets.Moon, sign = signOf(moon);
-  const { cusps } = cuspsFor(chart, settings().system);
+  const { cusps, system } = cuspsFor(chart, settings().system);
   const others = { ...natalPoints(chart) };
   delete others.Moon;
   const range = chart.moonRange && signOf(chart.moonRange[0]) !== signOf(chart.moonRange[1])
@@ -251,7 +252,7 @@ function moonPage(chart, first) {
       ${aspectList(chart.timeKnown ? aspectsTo(moon, others) : [])}
     </section>
     ${range}
-    ${systemNote(chart)}
+    ${systemNote(chart, { system })}
     <h2>Moon in ${sign}</h2>
     <p>${esc(content.moonSigns[sign].profile)}</p>
     <p class="muted small">At a New Moon: ${esc(content.moonSigns[sign].new)}</p>
@@ -329,7 +330,8 @@ function wireRestore() {
 function onboarding() {
   let place = null, candidates = [];
   view.innerHTML = `
-    <div class="eyebrow">The Moon Magic System</div>
+    ${getChart() ? '<a href="#/settings" class="small">← Cancel, keep my chart</a>' : ''}
+    <div class="eyebrow"${getChart() ? ' style="margin-top:16px"' : ''}>The Moon Magic System</div>
     <h1>Lock in your Moon</h1>
     <p class="muted">Enter your birth details once. Every New and Full Moon is then placed in your chart.</p>
     <form id="f" novalidate>
@@ -418,7 +420,10 @@ function route() {
   const [, page, arg, iso] = location.hash.split('/');
   const target = !chart || page === 'start' ? 'start' : page || 'home';
   nav.hidden = target === 'start';
-  nav.querySelectorAll('a').forEach(a => a.classList.toggle('on', a.dataset.tab === target));
+  nav.querySelectorAll('a').forEach(a => {
+    a.classList.toggle('on', a.dataset.tab === target);
+    if (a.dataset.tab === target) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+  });
   window.scrollTo(0, 0);
   if (target === 'start') return onboarding();
   if (target === 'practice' && (arg === 'new' || arg === 'full')) return practice(chart, arg, iso && !isNaN(new Date(iso)) ? iso : null);
@@ -432,7 +437,11 @@ try {
   content = await loadContent();
   window.addEventListener('hashchange', route);
   // Countdowns go stale while the app sits in the background; refresh when it comes back (not mid-typing on a practice page).
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && !location.hash.startsWith('#/practice')) route(); });
+  // Skip forms (practice, onboarding) so nothing typed is lost, and keep the scroll position.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden || !getChart() || /^#\/(practice|start)/.test(location.hash)) return;
+    const y = window.scrollY; route(); window.scrollTo(0, y);
+  });
   route();
 } catch (e) {
   view.innerHTML = `<p class="error pad">Couldn’t load the Moon Magic content. ${esc(e.message)}</p>`;
