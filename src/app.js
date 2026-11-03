@@ -6,6 +6,7 @@ import { searchPlaces, localToUtc, fmtOffset, parseOffset } from './place.js';
 import { loadContent, LUNATION_FILES, CONTENT_FILES } from './content.js';
 import { makeBackup, readBackup, mergePages } from './backup.js';
 import { buildPractice, toMarkdown, fmtWhen } from './practice.js';
+import { fmtFull, fmtShort, countdown, windows, toIcs } from './dates.js';
 
 const view = document.getElementById('view');
 const nav = document.getElementById('nav');
@@ -43,11 +44,32 @@ function systemNote(chart, lun) {
   return '';
 }
 
-function relative(iso) {
-  const h = (new Date(iso) - Date.now()) / 3600e3;
-  if (h < 0) return `exact ${Math.round(-h)}h ago · 48-hour window open`;
-  if (h < 36) return `in ${Math.round(h)} hours`;
-  return `in ${Math.round(h / 24)} days`;
+const status = l => { const c = countdown(l); return `<div class="status ${c.state}">${esc(c.text)}</div>`; };
+// The one window that matters most right now, for the home card.
+function windowLine(l) {
+  const w = windows(l).find(x => x.end);
+  return `<p class="small muted" style="margin:6px 0 0">${esc(w.label)} until ${esc(fmtShort(w.end))}</p>`;
+}
+
+function timingList(l) {
+  return `<section class="item ${l.phase}">
+    <div class="eyebrow">Timing</div>
+    <ul class="timing">${windows(l).map(w => `<li>
+      <b>${w.link ? `<a href="#/practice/${w.link.phase}/${w.link.date}">${esc(w.label)}</a>` : esc(w.label)}</b>
+      <span class="when">${w.end ? `${esc(fmtShort(w.at))} → ${esc(fmtShort(w.end))}` : esc(fmtFull(w.at))}</span>
+      <span class="small muted">${esc(w.note)}</span></li>`).join('')}</ul>
+  </section>`;
+}
+
+function addToCalendar(lunations) {
+  const base = location.origin + location.pathname;
+  const ics = toIcs(lunations, content.houses, l => `${base}#/practice/${l.phase}/${l.date}`);
+  const name = lunations.length === 1
+    ? `moon-magic-${lunations[0].phase}-moon-${lunations[0].sign.toLowerCase()}.ics` : 'moon-magic-next-moons.ics';
+  // iPhone opens a calendar data link straight into "Add to Calendar"; elsewhere the downloaded file opens in the calendar app.
+  const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (iOS) { location.href = 'data:text/calendar;charset=utf-8,' + encodeURIComponent(ics); return; }
+  saveFile(ics, name, 'text/calendar', false);
 }
 
 function eclipseBlock(l) {
@@ -89,7 +111,9 @@ function home(chart) {
       <a class="card ${l.phase}" href="#/practice/${l.phase}">
         <div class="eyebrow accent">${l.phase === 'new' ? 'New Moon · declaration' : 'Full Moon · illumination'}</div>
         <div class="degree">${fmtDeg(l.lon)}</div>
-        <div class="when">${esc(fmtWhen(l.date))} · ${relative(l.date)}</div>
+        <div class="when">${esc(fmtFull(l.date))}</div>
+        ${status(l)}
+        ${windowLine(l)}
         <div class="tags">
           ${l.eclipse ? `<span class="tag gold">${esc(l.eclipse)}</span>` : ''}
           ${l.moonSign ? '<span class="tag gold">Your Moon sign · you are the emotional main character</span>' : ''}
@@ -103,7 +127,10 @@ function home(chart) {
         ${aspectList(l.aspects, l, l.eclipse ? 5 : 3)}
         ${eclipseBlock(l)}
         <div class="go accent">Open practice →</div>
-      </a>`).join('')}`;
+      </a>`).join('')}
+    <div class="actions" style="margin-top:0"><button class="ghost" id="cal">Add both to calendar</button></div>
+    <p class="small muted">With reminders the day before, and before each 48-hour window closes.</p>`;
+  view.querySelector('#cal').onclick = () => addToCalendar(lunations);
 }
 
 /* ---------- Practice ---------- */
@@ -116,17 +143,12 @@ function savePage(lun, answers) {
   store.set('mm.pages', all);
 }
 
+// The arc's date lives in the timing list; this only quotes what was written at the New Moon it answers.
 function arcBlock(lun) {
-  const partner = arcPartner(lun);
-  if (!partner) return '';
-  const saved = pages()[`${partner.phase}-${partner.date.slice(0, 13)}`];
-  const link = `#/practice/${partner.phase}/${partner.date}`;
-  if (lun.phase === 'new') {
-    return `<p class="note noprint">Six-month arc: what you inscribe now comes to light at the <a href="${link}">Full Moon in ${lun.sign}, ${esc(fmtWhen(partner.date))}</a>.</p>`;
-  }
-  const wrote = saved && Object.values(saved.answers).some(v => v?.trim())
-    ? `<br>You wrote then: “${esc(saved.answers.line || saved.answers.journal || Object.values(saved.answers).find(v => v?.trim()))}”` : '';
-  return `<p class="note">Six-month arc: this Full Moon answers the <a href="${link}">New Moon in ${lun.sign}, ${esc(fmtWhen(partner.date))}</a>.${wrote}</p>`;
+  const partner = lun.phase === 'full' && arcPartner(lun);
+  const saved = partner && pages()[`${partner.phase}-${partner.date.slice(0, 13)}`];
+  const text = saved && (saved.answers.line?.trim() || saved.answers.journal?.trim() || Object.values(saved.answers).find(v => v?.trim()));
+  return text ? `<p class="note">At the New Moon in ${lun.sign} (${esc(fmtShort(partner.date))}) you wrote: “${esc(text)}”</p>` : '';
 }
 
 function practice(chart, phase, iso) {
@@ -136,12 +158,15 @@ function practice(chart, phase, iso) {
   const answers = pages()[pageKey(lun)]?.answers || {};
   view.innerHTML = `
     <a href="${iso ? '#/library' : '#/home'}" class="small noprint">← ${iso ? 'Library' : 'Moons'}</a>
-    <div class="eyebrow" style="margin-top:16px">${esc(fmtWhen(lun.date))} · ${fmtDeg(lun.lon)}${lun.eclipse ? ' · ' + esc(lun.eclipse) : ''}</div>
+    <div class="eyebrow" style="margin-top:16px">${fmtDeg(lun.lon)}${lun.eclipse ? ' · ' + esc(lun.eclipse) : ''}</div>
     <h1>${esc(p.title)}</h1>
+    <div class="when">${esc(fmtFull(lun.date))}</div>
+    ${status(lun)}
     <p class="energy">${esc(p.energy)} ${p.draft ? '<span class="draft">draft</span>' : ''}</p>
     ${systemNote(chart, lun)}
     ${lun.eclipse ? `<p class="note">${esc(content.eclipses[phase].how)}</p>` : ''}
     ${arcBlock(lun)}
+    ${timingList(lun)}
     ${p.items.map(it => `
       <section class="item ${phase}">
         <div class="eyebrow">${esc(it.label)}</div>
@@ -152,6 +177,7 @@ function practice(chart, phase, iso) {
       <button id="save">Save</button>
       <button id="print" class="ghost">Print / PDF</button>
     </div>
+    <div class="actions" style="margin-top:10px"><button id="cal" class="ghost">Add to calendar</button></div>
     <p class="small muted noprint" style="margin-top:10px">Your writing stays on this phone until you save it.</p>`;
   const grow = t => { t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; };
   view.querySelectorAll('textarea').forEach(t => {
@@ -159,13 +185,14 @@ function practice(chart, phase, iso) {
     t.addEventListener('input', () => { grow(t); answers[t.dataset.key] = t.value; savePage(lun, answers); });
   });
   view.querySelector('#print').onclick = () => window.print();
+  view.querySelector('#cal').onclick = () => addToCalendar([lun]);
   view.querySelector('#save').onclick = () => saveFile(toMarkdown(p, lun, answers), `moon-magic-${phase}-moon-${lun.sign.toLowerCase()}-${new Date(lun.date).toLocaleDateString('en-CA')}.md`);
 }
 
-async function saveFile(text, filename, type = 'text/markdown') {
+async function saveFile(text, filename, type = 'text/markdown', share = true) {
   const file = new File([text], filename, { type });
   // Share sheet on phones (an <a download> is unreliable in an iOS home-screen app); plain download elsewhere.
-  if (navigator.maxTouchPoints > 0 && navigator.canShare?.({ files: [file] })) {
+  if (share && navigator.maxTouchPoints > 0 && navigator.canShare?.({ files: [file] })) {
     try { await navigator.share({ files: [file], title: filename }); return; } catch (e) { if (e.name === 'AbortError') return; }
   }
   const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(file), download: filename });
@@ -180,19 +207,28 @@ function library(chart, tab) {
     <a href="#/library/all" class="${tab === 'all' ? 'on' : ''}">All 24 moons</a></div>`;
   if (tab === 'all') {
     const all = allTwentyFour(new Date(), chart, settings().system);
-    const rows = LUNATION_FILES.map(f => all[`${f.phase}-${f.sign}`] || { phase: f.phase, sign: f.sign });
+    const dated = Object.values(all).sort((a, b) => a.date.localeCompare(b.date));
+    const missing = LUNATION_FILES.filter(f => !all[`${f.phase}-${f.sign}`]);
+    const month = d => new Date(d).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    let html = '', current = '';
+    for (const l of dated) {
+      if (month(l.date) !== current) { current = month(l.date); html += `<li class="month">${esc(current)}</li>`; }
+      html += `<li class="${l.phase}"><a href="#/practice/${l.phase}/${l.date}">
+        <span><b>${l.phase === 'new' ? 'New' : 'Full'} Moon in ${l.sign}</b>${l.eclipse ? ' <span class="tag gold">eclipse</span>' : ''}<br>
+        <span class="small muted">${esc(fmtShort(l.date))} · ${esc(countdown(l).text)}</span></span>
+        <span class="accent">${ordinal(l.house)}</span></a></li>`;
+    }
+    html += missing.map(f => `<li class="${f.phase}"><span><b>${f.phase === 'new' ? 'New' : 'Full'} Moon in ${f.sign}</b><br><span class="small muted">Not in the next 14 months</span></span></li>`).join('');
     view.innerHTML = `<h1>Library</h1>${tabs}
-      <p class="muted small">Every New and Full Moon of the year, in the order of the seasons, and where each lands for you next.</p>
-      <ul class="list">${rows.map(l => `<li class="${l.phase}">${l.date
-        ? `<a href="#/practice/${l.phase}/${l.date}"><span><b>${l.phase === 'new' ? 'New' : 'Full'} Moon in ${l.sign}</b><br><span class="small muted">${esc(fmtWhen(l.date))}${l.eclipse ? ' · eclipse' : ''}</span></span><span class="accent">${ordinal(l.house)}</span></a>`
-        : `<span><b>${l.phase === 'new' ? 'New' : 'Full'} Moon in ${l.sign}</b><br><span class="small muted">Not in the next year</span></span>`}</li>`).join('')}</ul>`;
+      <p class="muted small">Every New and Full Moon coming up, in calendar order, and the house each lands in for you.</p>
+      <ul class="list">${html}</ul>`;
     return;
   }
   const saved = Object.values(pages()).filter(p => Object.values(p.answers).some(v => v?.trim()))
     .sort((a, b) => b.date.localeCompare(a.date));
   view.innerHTML = `<h1>Library</h1>${tabs}
     ${saved.length ? `<ul class="list">${saved.map(p => `<li class="${p.phase}"><a href="#/practice/${p.phase}/${p.date}">
-      <span><b>${p.phase === 'new' ? 'New' : 'Full'} Moon in ${p.sign}</b><br><span class="small muted">${esc(fmtWhen(p.date))} · ${esc((p.answers.journal || p.answers.line || '').slice(0, 60))}</span></span>
+      <span><b>${p.phase === 'new' ? 'New' : 'Full'} Moon in ${p.sign}</b><br><span class="small muted">${esc(new Date(p.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }))} ·${esc((p.answers.journal || p.answers.line || '').slice(0, 60))}</span></span>
       <span class="accent">${ordinal(p.house)}</span></a></li>`).join('')}</ul>`
     : '<p class="muted">Nothing written yet. Pages you write in show up here, newest first.</p>'}`;
 }
@@ -395,6 +431,8 @@ function route() {
 try {
   content = await loadContent();
   window.addEventListener('hashchange', route);
+  // Countdowns go stale while the app sits in the background; refresh when it comes back (not mid-typing on a practice page).
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && !location.hash.startsWith('#/practice')) route(); });
   route();
 } catch (e) {
   view.innerHTML = `<p class="error pad">Couldn’t load the Moon Magic content. ${esc(e.message)}</p>`;
@@ -404,7 +442,7 @@ try {
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').then(() => caches.open('mm-v1')).then(c => c.addAll([
     './', 'index.html', 'style.css', 'manifest.webmanifest', 'icon.svg', 'apple-touch-icon.png', 'icon-192.png', 'icon-512.png', 'vendor/astronomy.js',
-    ...['app', 'chart', 'lunations', 'place', 'content', 'practice', 'sky', 'backup'].map(f => `src/${f}.js`),
+    ...['app', 'chart', 'lunations', 'place', 'content', 'practice', 'sky', 'backup', 'dates'].map(f => `src/${f}.js`),
     ...CONTENT_FILES.map(f => `content/${f}`),
     ...LUNATION_FILES.map(f => `content/lunations/${f.file}`),
   ])).catch(() => { /* offline cache is best effort */ });
